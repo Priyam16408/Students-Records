@@ -7,10 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node --watch server/index.js",
+    "server:start": "node server/index.js"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "mongoose": "^9.10.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-feather": "^2.0.10",
