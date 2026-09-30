@@ -165,6 +165,12 @@ body {
   font-size: 11px;
 }
 
+.api-error {
+  margin: -10px 0 18px;
+  color: #a23c2d;
+  font-size: 12px;
+}
+
 .overview-note {
   margin-left: auto;
   color: #7b847f;

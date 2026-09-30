@@ -1,27 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Edit2, Plus, Search, Trash2, Users, X } from "react-feather";
 
-const STORAGE_KEY = "student-ledger-records";
+const STUDENTS_API = "/api/students";
 const emptyForm = { name: "", email: "", course: "", phone: "", year: "" };
 
-function readStudents() {
-  try {
-    const savedStudents = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(savedStudents) ? savedStudents : [];
-  } catch {
-    return [];
-  }
-}
-
 const AddStudents = () => {
-  const [students, setStudents] = useState(readStudents);
+  const [students, setStudents] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
-  }, [students]);
+    const controller = new AbortController();
+
+    async function loadStudents() {
+      try {
+        const response = await fetch(STUDENTS_API, { signal: controller.signal });
+        if (!response.ok) throw new Error("Unable to load student records.");
+        setStudents(await response.json());
+      } catch (loadError) {
+        if (loadError.name !== "AbortError") setError(loadError.message);
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
+      }
+    }
+
+    loadStudents();
+    return () => controller.abort();
+  }, []);
 
   const visibleStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -42,22 +51,30 @@ const AddStudents = () => {
     setEditingId(null);
   };
 
-  const saveStudent = (event) => {
+  const saveStudent = async (event) => {
     event.preventDefault();
     const record = { ...form, name: form.name.trim(), email: form.email.trim() };
 
-    if (editingId) {
-      setStudents((currentStudents) => currentStudents.map((student) =>
-        student.id === editingId ? { ...student, ...record } : student,
-      ));
-    } else {
-      setStudents((currentStudents) => [
-        { ...record, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
-        ...currentStudents,
-      ]);
-    }
+    setIsSaving(true);
+    setError("");
+    try {
+      const response = await fetch(editingId ? `${STUDENTS_API}/${editingId}` : STUDENTS_API, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(record),
+      });
+      const savedStudent = await response.json();
+      if (!response.ok) throw new Error(savedStudent.message || "Unable to save student record.");
 
-    resetForm();
+      setStudents((currentStudents) => editingId
+        ? currentStudents.map((student) => student._id === editingId ? savedStudent : student)
+        : [savedStudent, ...currentStudents]);
+      resetForm();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const editStudent = (student) => {
@@ -68,13 +85,21 @@ const AddStudents = () => {
       phone: student.phone,
       year: student.year,
     });
-    setEditingId(student.id);
+    setEditingId(student._id);
   };
 
-  const deleteStudent = (student) => {
+  const deleteStudent = async (student) => {
     if (!window.confirm(`Delete ${student.name}'s record? This cannot be undone.`)) return;
-    setStudents((currentStudents) => currentStudents.filter((item) => item.id !== student.id));
-    if (editingId === student.id) resetForm();
+    setError("");
+    try {
+      const response = await fetch(`${STUDENTS_API}/${student._id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Unable to delete student record.");
+      setStudents((currentStudents) => currentStudents.filter((item) => item._id !== student._id));
+      if (editingId === student._id) resetForm();
+    } catch (deleteError) {
+      setError(deleteError.message);
+    }
   };
 
   return (
@@ -94,8 +119,10 @@ const AddStudents = () => {
           <strong>{students.length}</strong>
           <span>{students.length === 1 ? "student record" : "student records"}</span>
         </div>
-        <span className="overview-note">All records are saved on this device</span>
+        <span className="overview-note">Records are saved to MongoDB</span>
       </section>
+
+      {error && <p className="api-error" role="alert">{error}</p>}
 
       <div className="records-layout">
         <section className="student-form-panel" aria-labelledby="form-title">
@@ -143,8 +170,8 @@ const AddStudents = () => {
                   <X size={16} /> Cancel
                 </button>
               )}
-              <button className="button button-primary" type="submit">
-                <Plus size={16} /> {editingId ? "Save changes" : "Add student"}
+              <button className="button button-primary" type="submit" disabled={isSaving}>
+                <Plus size={16} /> {isSaving ? "Saving..." : editingId ? "Save changes" : "Add student"}
               </button>
             </div>
           </form>
@@ -163,7 +190,9 @@ const AddStudents = () => {
             </label>
           </div>
 
-          {visibleStudents.length > 0 ? (
+          {isLoading ? (
+            <div className="empty-state"><p>Loading student records...</p></div>
+          ) : visibleStudents.length > 0 ? (
             <div className="table-wrap">
               <table className="student-table">
                 <thead>
@@ -177,7 +206,7 @@ const AddStudents = () => {
                 </thead>
                 <tbody>
                   {visibleStudents.map((student) => (
-                    <tr key={student.id}>
+                    <tr key={student._id}>
                       <td>
                         <div className="student-name">{student.name}</div>
                         <div className="student-email">{student.email}</div>
